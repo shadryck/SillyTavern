@@ -1371,7 +1371,7 @@ function substituteParams(content, _name1, _name2) {
     content = content.replace(/{{char}}/gi, _name2);
     content = content.replace(/<USER>/gi, _name1);
     content = content.replace(/<BOT>/gi, _name2);
-    content = content.replace(/{{time}}/gi, moment().format('LT'));
+    content = content.replace(/{{time}}/gi, moment().format('hh:mm:ss a'));
     content = content.replace(/{{date}}/gi, moment().format('LL'));
     return content;
 }
@@ -1450,7 +1450,7 @@ function sendSystemMessage(type, text, extra = {}) {
         return;
     }
 
-    const newMessage = { ...systemMessage, send_date: humanizedDateTime() };
+    const newMessage = { ...systemMessage, send_date: humanizedDateTime(), send_time: Date.now() };
 
     if (text) {
         newMessage.mes = text;
@@ -1933,7 +1933,33 @@ async function Generate(type, { automatic_trigger, force_name2, resolve, reject,
         }
 
         ////////////////////////////////////
-        const scenarioText = chat_metadata['scenario'] || characters[this_chid].scenario;
+        let scenarioText = chat_metadata['scenario'] || characters[this_chid].scenario;
+
+        const getPrevBotMessageTime = lastIndex => {
+            for (let i = chat.length - 1; i >= 0; i--) {
+                if (!chat[i].is_user && --lastIndex <= 0) {
+                    return chat[i].gen_finished_time ?? chat[i].send_time ?? 1686458800;
+                }
+            }
+        }
+        
+        const getTimeDiff = (t1, t2) => {
+            return Math.round((t2 - t1) / 1000);
+        }
+
+        const responseTimeLookup = [
+            [15, 'normal'],
+            [30, 'bit slow'],
+            [60, 'very slow'],
+            [Number.MAX_VALUE, 'extremely slow']
+        ]
+        
+        // const timeDiff = getTimeDiff(getPrevBotMessageTime(1), getPrevBotMessageTime(0))
+        const timeDiff = getTimeDiff(getPrevBotMessageTime(0), Date.now())
+        scenarioText += `\nIt took {{user}} ${timeDiff} seconds to respond to you, this is a ${responseTimeLookup.find(x => timeDiff < x[0])[1]} response time.`;
+        // scenarioText += `\nBefore that it took {{user}} ${getTimeDiff(getPrevBotMessageTime(3), getPrevBotMessageTime(2))} seconds and then ${getTimeDiff(getPrevBotMessageTime(2), getPrevBotMessageTime(1))} seconds to respond.`;
+        console.log('SCENARIO:', Scenario)
+
         let charDescription = baseChatReplace(characters[this_chid].description.trim(), name1, name2);
         let charPersonality = baseChatReplace(characters[this_chid].personality.trim(), name1, name2);
         let Scenario = baseChatReplace(scenarioText.trim(), name1, name2);
@@ -2450,6 +2476,8 @@ async function Generate(type, { automatic_trigger, force_name2, resolve, reject,
                     streamingProcessor.onFinishStreaming(streamingProcessor.messageId, getMessage);
                     streamingProcessor = null;
                 }
+
+                chat[chat.length - 1]['gen_finished_time'] = Date.now()
             }
 
             async function onSuccess(data) {
@@ -2580,6 +2608,8 @@ async function Generate(type, { automatic_trigger, force_name2, resolve, reject,
                 }
                 console.debug('/savechat called by /Generate');
 
+                chat[chat.length - 1]['gen_finished_time'] = Date.now()
+
                 saveChatConditional();
                 activateSendButtons();
                 showSwipeButtons();
@@ -2659,6 +2689,7 @@ export async function sendMessageAsUser(textareaText, messageBias) {
     chat[chat.length - 1]['is_user'] = true;
     chat[chat.length - 1]['is_name'] = true;
     chat[chat.length - 1]['send_date'] = getMessageTimeStamp();
+    chat[chat.length - 1]['send_time'] = Date.now();
     chat[chat.length - 1]['mes'] = substituteParams(textareaText);
     chat[chat.length - 1]['extra'] = {};
 
@@ -3363,6 +3394,7 @@ function saveReply(type, getMessage, this_mes_is_name, title) {
         chat[chat.length - 1]['is_user'] = false;
         chat[chat.length - 1]['is_name'] = this_mes_is_name;
         chat[chat.length - 1]['send_date'] = getMessageTimeStamp();
+        chat[chat.length - 1]['send_time'] = Date.now();
         getMessage = $.trim(getMessage);
         chat[chat.length - 1]['mes'] = getMessage;
         chat[chat.length - 1]['title'] = title;
@@ -3765,6 +3797,7 @@ async function getChatResult() {
             is_user: false,
             is_name: true,
             send_date: getMessageTimeStamp(),
+            send_time: Date.now(),
             mes: firstMes,
         };
 
